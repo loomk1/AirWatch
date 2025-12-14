@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AirWatch – Air Quality & Weather Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+  --bg:#f5f8fc;
+  --card:#ffffff;
+  --primary:#4f6ef7;
+  --text:#1f2937;
+  --muted:#6b7280;
+  --shadow:0 10px 30px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box;font-family:Inter,system-ui}
+body{margin:0;background:var(--bg);color:var(--text)}
+
+header{
+  background:#fff;
+  padding:18px 30px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  box-shadow:var(--shadow)
+}
+header h1{margin:0;font-size:22px;color:var(--primary)}
+header small{display:block;color:var(--muted);font-size:12px}
+
+button{
+  border:none;
+  padding:10px 14px;
+  border-radius:10px;
+  background:var(--primary);
+  color:#fff;
+  cursor:pointer;
+}
+button.secondary{
+  background:#fff;
+  color:var(--text);
+  border:1px solid #e5e7eb;
+}
+
+main{padding:30px}
+
+.controls{
+  display:flex;
+  gap:12px;
+  margin-bottom:20px;
+}
+.controls input{
+  flex:1;
+  padding:12px;
+  border-radius:10px;
+  border:1px solid #e5e7eb;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+  gap:20px;
+}
+
+.card{
+  background:var(--card);
+  border-radius:16px;
+  padding:18px;
+  box-shadow:var(--shadow);
+  position:relative;
+}
+.card h2{margin:6px 0 10px}
+.card .top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+.card .aqi{
+  width:80px;height:80px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:20px;
+  border:6px solid;
+}
+.info{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+}
+.info div{
+  flex:1;
+  background:#f9fafb;
+  padding:10px;
+  border-radius:10px;
+  text-align:center;
+}
+
+footer{
+  text-align:center;
+  padding:20px;
+  color:var(--muted);
+}
+
+/* MODAL */
+.modal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.4);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:100;
+}
+.modal-content{
+  background:#fff;
+  width:90%;
+  max-width:900px;
+  max-height:85vh;
+  overflow:auto;
+  border-radius:16px;
+  padding:20px;
+  box-shadow:var(--shadow);
+}
+.tabs button{
+  margin-right:8px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div>
+    <h1>AirWatch</h1>
+    <small>Air Quality & Weather Monitor</small>
+  </div>
+  <div>
+    <button class="secondary" onclick="refreshAll()">Refresh All</button>
+    <button onclick="openCompare()">Compare</button>
+  </div>
+</header>
+
+<main>
+  <div class="controls">
+    <input id="search" placeholder="Search city globally..." />
+    <button onclick="searchCity()">Add City</button>
+  </div>
+
+  <div class="grid" id="cityGrid"></div>
+</main>
+
+<footer>
+  @shiven_thakur.k1 (This is my Insta ID)
+  © 2025 Shiven Thakur
+</footer>
+
+<!-- COMPARISON MODAL -->
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <h2>City Comparison</h2>
+    <div class="tabs">
+      <button onclick="showTab('table')">Table</button>
+      <button onclick="showTab('charts')">Charts</button>
+      <button onclick="showTab('insights')">Insights</button>
+      <button style="float:right" onclick="closeModal()">Close</button>
+    </div>
+    <div id="tabContent"></div>
+  </div>
+</div>
+
+<script>
+const API_KEY = "bf57504e06985889868020dc567d8730";
+
+const defaultCities = [
+  "Pune","Mumbai","Delhi","Bangalore","Hyderabad",
+  "Chennai","Kolkata","Ahmedabad","Jaipur"
+];
+
+let cities = [];
+let selected = new Set();
+
+/* AQI PM2.5 US EPA */
+function calcAQI(pm){
+  const bps = [
+    [0,12,0,50],
+    [12.1,35.4,51,100],
+    [35.5,55.4,101,150],
+    [55.5,150.4,151,200],
+    [150.5,250.4,201,300],
+    [250.5,350.4,301,400],
+    [350.5,500.4,401,500],
+  ];
+  for(let b of bps){
+    if(pm>=b[0] && pm<=b[1]){
+      return Math.round(((b[3]-b[2])/(b[1]-b[0]))*(pm-b[0])+b[2]);
+    }
+  }
+  return 500;
+}
+
+function aqiColor(aqi){
+  if(aqi<=50) return "green";
+  if(aqi<=100) return "gold";
+  if(aqi<=150) return "orange";
+  if(aqi<=200) return "red";
+  if(aqi<=300) return "purple";
+  return "maroon";
+}
+
+async function fetchCity(city){
+  const geo = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${API_KEY}`).then(r=>r.json());
+  if(!geo[0]) return;
+  const {lat,lon,name,country} = geo[0];
+
+  const weather = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`).then(r=>r.json());
+  const air = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`).then(r=>r.json());
+
+  const pm25 = air.list[0].components.pm2_5;
+  const aqi = calcAQI(pm25);
+
+  cities.push({
+    id:Date.now()+Math.random(),
+    name,
+    country,
+    temp:weather.main.temp,
+    humidity:weather.main.humidity,
+    aqi
+  });
+  render();
+}
+
+function render(){
+  const grid=document.getElementById("cityGrid");
+  grid.innerHTML="";
+  cities.forEach(c=>{
+    const div=document.createElement("div");
+    div.className="card";
+    div.innerHTML=`
+      <div class="top">
+        <h2>${c.name}</h2>
+        <input type="checkbox" ${selected.has(c.id)?"checked":""}
+          onchange="toggle(${c.id})">
+      </div>
+      <div class="aqi" style="border-color:${aqiColor(c.aqi)}">
+        ${c.aqi}
+      </div>
+      <div class="info">
+        <div>🌡️ ${c.temp} °C</div>
+        <div>💧 ${c.humidity}%</div>
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function toggle(id){
+  selected.has(id)?selected.delete(id):selected.add(id);
+}
+
+function refreshAll(){
+  cities=[];
+  selected.clear();
+  defaultCities.forEach(fetchCity);
+}
+
+function searchCity(){
+  const v=document.getElementById("search").value;
+  if(v) fetchCity(v);
+}
+
+function openCompare(){
+  if(selected.size<2){alert("Select at least 2 cities");return;}
+  document.getElementById("modal").style.display="flex";
+  showTab("table");
+}
+
+function closeModal(){
+  document.getElementById("modal").style.display="none";
+}
+
+function showTab(tab){
+  const cont=document.getElementById("tabContent");
+  const sel=cities.filter(c=>selected.has(c.id));
+
+  if(tab==="table"){
+    cont.innerHTML="<table border=1 width=100%><tr><th>City</th><th>AQI</th><th>Temp</th><th>Humidity</th></tr>"+
+      sel.map(c=>`<tr><td>${c.name}</td><td>${c.aqi}</td><td>${c.temp}</td><td>${c.humidity}</td></tr>`).join("")+
+      "</table>";
+  }
+
+  if(tab==="charts"){
+    cont.innerHTML="<canvas id='chart'></canvas>";
+    new Chart(document.getElementById("chart"),{
+      type:"bar",
+      data:{
+        labels:sel.map(c=>c.name),
+        datasets:[
+          {label:"AQI",data:sel.map(c=>c.aqi)},
+          {label:"Temp °C",data:sel.map(c=>c.temp)},
+          {label:"Humidity %",data:sel.map(c=>c.humidity)}
+        ]
+      }
+    });
+  }
+
+  if(tab==="insights"){
+    cont.innerHTML=sel.map(c=>`<p><b>${c.name}</b> AQI ${c.aqi}, Temp ${c.temp}°C, Humidity ${c.humidity}%</p>`).join("");
+  }
+}
+
+defaultCities.forEach(fetchCity);
+</script>
+
+</body>
+</html>

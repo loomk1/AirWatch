@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Neon AQI & Weather Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { background-color: #0a0a1a; color: #fff; font-family: 'Segoe UI', sans-serif; }
+  /* Neon card styles */
+  .neon-card { 
+    background: #11112a; 
+    border-radius: 1rem; 
+    padding: 2rem; 
+    box-shadow: 0 0 20px #0ff, 0 0 40px #0ff, 0 0 60px #0ff; 
+    transition: transform 0.2s;
+  }
+  .neon-card:hover { transform: translateY(-5px); }
+  .neon-btn { 
+    background: #0ff; 
+    color: #11112a; 
+    padding: 0.5rem 1.5rem; 
+    border-radius: 1rem; 
+    box-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+    transition: all 0.2s;
+  }
+  .neon-btn:hover { background: #0ff; transform: scale(1.05); box-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+  input, select { background: #11112a; color: #0ff; border: 1px solid #0ff; border-radius: 0.5rem; padding: 0.5rem; }
+  /* Modal styles */
+  #comparisonModal { display: none; position: fixed; inset: 0; background: rgba(10,10,26,0.95); z-index: 50; align-items: center; justify-content: center; overflow-y: auto; }
+  .modal-content { background: #11112a; border-radius: 1rem; padding: 2rem; max-width: 800px; width: 90%; box-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+  .tabs button.active { border-bottom: 2px solid #0ff; }
+  .tab-content { max-height: 400px; overflow-y: auto; }
+  .chart-container { position: relative; height: 250px; margin-top: 1rem; }
+  input[type=checkbox] { accent-color: #0ff; border-radius: 0.25rem; }
+</style>
+</head>
+<body class="min-h-screen p-6">
+
+<!-- Header -->
+<header class="max-w-7xl mx-auto mb-6 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 rounded-xl bg-gradient-to-r from-cyan-400 to-purple-500 flex items-center justify-center text-black font-bold">AQ</div>
+    <div>
+      <h1 class="text-xl font-bold text-cyan-400">Neon AirWatch</h1>
+      <p class="text-sm text-purple-400">Live AQI & Weather Monitor</p>
+    </div>
+  </div>
+  <div class="flex gap-3">
+    <button onclick="loadDefaultCities()" class="neon-btn">Refresh</button>
+    <button id="compareBtn" class="neon-btn">Compare</button>
+  </div>
+</header>
+
+<!-- Search -->
+<div class="max-w-7xl mx-auto mb-4">
+  <input id="searchInput" list="citySuggestions" type="text" placeholder="Search any city worldwide and press Enter" class="w-full p-3 rounded-xl shadow-lg focus:outline-none" />
+  <datalist id="citySuggestions"></datalist>
+</div>
+
+<div class="max-w-7xl mx-auto mb-4 text-sm text-cyan-400">🟢 Live AQI • Updates every 5 minutes</div>
+
+<!-- Cards -->
+<div id="cards" class="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+<!-- Comparison Modal -->
+<div id="comparisonModal" class="flex">
+  <div class="modal-content">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-lg font-semibold text-cyan-400">Comparison</h2>
+      <button onclick="closeModal()" class="neon-btn bg-red-500 text-black hover:bg-red-600">X</button>
+    </div>
+    <!-- Tabs -->
+    <div class="tabs flex gap-4 border-b border-purple-400 mb-4">
+      <button class="tab-btn active text-cyan-400" data-tab="tableTab">Table</button>
+      <button class="tab-btn text-cyan-400" data-tab="chartsTab">Charts</button>
+      <button class="tab-btn text-cyan-400" data-tab="insightsTab">Insights</button>
+    </div>
+    <!-- Tab content -->
+    <div id="tableTab" class="tab-content text-cyan-400">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr>
+            <th class="border-b border-purple-400 p-2">City</th>
+            <th class="border-b border-purple-400 p-2">AQI</th>
+            <th class="border-b border-purple-400 p-2">Temp (°C)</th>
+            <th class="border-b border-purple-400 p-2">Humidity (%)</th>
+          </tr>
+        </thead>
+        <tbody id="comparisonTable"></tbody>
+      </table>
+    </div>
+    <div id="chartsTab" class="tab-content hidden">
+      <div class="chart-container">
+        <canvas id="aqiChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="tempChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <canvas id="humChart"></canvas>
+      </div>
+    </div>
+    <div id="insightsTab" class="tab-content p-2">
+      <ul id="insightsList" class="text-cyan-400"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_KEY = "bf57504e06985889868020dc567d8730";
+const DEFAULT_CITIES = ["Delhi","Mumbai","Bengaluru","Chennai","Hyderabad","Kolkata","Pune","Ahmedabad","Jaipur"];
+let cityData = [];
+
+function pm25ToAQI(pm) {
+  if (pm <= 12) return Math.round(pm * 4.17);
+  if (pm <= 35.4) return Math.round(((pm - 12.1)/(35.4-12.1))*(100-51)+51);
+  if (pm <= 55.4) return Math.round(((pm - 35.5)/(55.4-35.5))*(150-101)+101);
+  if (pm <= 150.4) return Math.round(((pm - 55.5)/(150.4-55.5))*(200-151)+151);
+  if (pm <= 250.4) return Math.round(((pm - 150.5)/(250.4-150.5))*(300-201)+201);
+  return Math.round(((pm - 250.5)/(500-250.5))*(500-301)+301);
+}
+
+function aqiMeta(aqi) {
+  if (aqi <= 50) return ["Good","#0ff"];
+  if (aqi <= 100) return ["Moderate","#0f0"];
+  if (aqi <= 150) return ["Unhealthy (Sensitive)","#ff0"];
+  if (aqi <= 200) return ["Unhealthy","#f0f"];
+  if (aqi <= 300) return ["Very Unhealthy","#f00"];
+  return ["Hazardous","#f0f"];
+}
+
+function buildCard(city, country, aqi, label, color, temp, hum) {
+  return `
+    <div class="neon-card">
+      <div>
+        <h2 class="text-lg font-bold text-${color}">${city}, ${country}</h2>
+        <div class="mt-4 flex items-center gap-4">
+          <div class="w-20 h-20 rounded-full border-4 border-${color} flex flex-col items-center justify-center text-${color}">
+            <div class="text-xl font-bold">${aqi}</div>
+            <div class="text-xs">AQI</div>
+          </div>
+          <span class="px-3 py-1 rounded-full text-sm bg-${color} text-black">${label}</span>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div class="bg-purple-900 rounded-xl p-3 text-cyan-400">🌡 ${temp} °C</div>
+          <div class="bg-blue-900 rounded-xl p-3 text-cyan-400">💧 ${hum} %</div>
+        </div>
+      </div>
+      <div class="mt-3">
+        <label class="flex items-center gap-2 cursor-pointer text-cyan-400">
+          <input type="checkbox" class="compareCheck">
+          <span class="text-sm">Compare</span>
+        </label>
+      </div>
+    </div>`;
+}
+
+// Load default cities
+async function loadDefaultCities() {
+  const container = document.getElementById("cards");
+  container.innerHTML = "";
+  cityData = [];
+  for (const city of DEFAULT_CITIES) {
+    try {
+      const w = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${API_KEY}`).then(r => r.json());
+      const a = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${w.coord.lat}&lon=${w.coord.lon}&appid=${API_KEY}`).then(r => r.json());
+      const pm25 = a.list[0].components.pm2_5;
+      const aqi = pm25ToAQI(pm25);
+      const [label,color] = aqiMeta(aqi);
+      container.innerHTML += buildCard(w.name, w.sys.country, aqi, label, color, w.main.temp, w.main.humidity);
+      cityData.push({name: w.name, country: w.sys.country, aqi, temp: w.main.temp, hum: w.main.humidity});
+    } catch(e){ console.error(e); }
+  }
+}
+
+// Search
+document.getElementById("searchInput").addEventListener("keydown", async e => {
+  if(e.key!=="Enter") return;
+  const city = e.target.value.trim();
+  if(!city) return;
+  const container = document.getElementById("cards");
+  container.innerHTML = "";
+  try{
+    const w = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&units=metric&appid=${API_KEY}`).then(r=>r.json());
+    const a = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${w.coord.lat}&lon=${w.coord.lon}&appid=${API_KEY}`).then(r=>r.json());
+    const pm25 = a.list[0].components.pm2_5;
+    const aqi = pm25ToAQI(pm25);
+    const [label,color] = aqiMeta(aqi);
+    container.innerHTML = buildCard(w.name, w.sys.country, aqi,label,color,w.main.temp,w.main.humidity);
+    cityData = [{name:w.name,country:w.sys.country,aqi,temp:w.main.temp,hum:w.main.humidity}];
+  }catch{ container.innerHTML = `<div class="text-red-500">City not found</div>`;}
+});
+
+// Modal
+const modal = document.getElementById("comparisonModal");
+document.getElementById("compareBtn").addEventListener("click",()=>{
+  const selected = Array.from(document.querySelectorAll(".compareCheck:checked")).map((cb,i)=>cityData[i]);
+  if(selected.length<2){ alert("Select at least 2 cities"); return; }
+  showComparison(selected);
+});
+function closeModal(){ modal.style.display="none"; }
+function showComparison(cities){
+  modal.style.display="flex";
+  const tbody = document.getElementById("comparisonTable");
+  tbody.innerHTML = cities.map(c=>`<tr>
+    <td class="border-b border-purple-400 p-2">${c.name}</td>
+    <td class="border-b border-purple-400 p-2">${c.aqi}</td>
+    <td class="border-b border-purple-400 p-2">${c.temp}</td>
+    <td class="border-b border-purple-400 p-2">${c.hum}</td>
+  </tr>`).join("");
+  
+  const labels = cities.map(c=>c.name);
+  const aqiData = cities.map(c=>c.aqi);
+  const tempData = cities.map(c=>c.temp);
+  const humData = cities.map(c=>c.hum);
+  new Chart(document.getElementById("aqiChart"), { type:"bar", data:{labels,datasets:[{label:"AQI",data:aqiData,backgroundColor:"#0ff"}]}});
+  new Chart(document.getElementById("tempChart"), { type:"bar", data:{labels,datasets:[{label:"Temperature °C",data:tempData,backgroundColor:"#ff0"}]}});
+  new Chart(document.getElementById("humChart"), { type:"bar", data:{labels,datasets:[{label:"Humidity %",data:humData,backgroundColor:"#0f0"}]}});
+  
+  const ins = document.getElementById("insightsList");
+  const maxAQI = cities.reduce((a,b)=>a.aqi>b.aqi?a:b);
+  ins.innerHTML = `<li>City with worst AQI: ${maxAQI.name} (${maxAQI.aqi})</li>`;
+}
+
+// Tabs
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    document.querySelectorAll(".tab-content").forEach(tc=>tc.classList.add("hidden"));
+    document.getElementById(tab).classList.remove("hidden");
+  });
+});
+
+loadDefaultCities();
+</script>
+</body>
+</html>

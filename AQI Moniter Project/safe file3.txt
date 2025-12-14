@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AirWatch – Live AQI Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+  margin:0;
+  font-family:Inter,system-ui,Arial;
+  background:#f4f7fb;
+  color:#0f172a;
+}
+header{
+  background:#ffffff;
+  padding:16px 24px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  box-shadow:0 2px 10px rgba(0,0,0,.06);
+}
+header h1{margin:0;font-size:20px}
+button{
+  cursor:pointer;
+  border:none;
+  border-radius:10px;
+  padding:8px 14px;
+  background:#2563eb;
+  color:white;
+  font-weight:600;
+}
+input{
+  padding:10px;
+  border-radius:10px;
+  border:1px solid #cbd5e1;
+  width:100%;
+}
+.container{max-width:1200px;margin:auto;padding:20px}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:16px;
+}
+.card{
+  background:white;
+  border-radius:16px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(0,0,0,.08);
+}
+.card h3{margin:0 0 8px}
+.aqi{
+  font-size:32px;
+  font-weight:800;
+}
+.badge{
+  display:inline-block;
+  padding:4px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:600;
+}
+.modal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.5);
+  display:none;
+  align-items:center;
+  justify-content:center;
+}
+.modal-content{
+  background:white;
+  width:90%;
+  max-width:800px;
+  max-height:80vh;
+  overflow:auto;
+  border-radius:20px;
+  padding:20px;
+  box-shadow:0 20px 50px rgba(0,0,0,.4);
+}
+.tabs button{
+  background:#e5e7eb;
+  color:#0f172a;
+  margin-right:8px;
+}
+.tabs button.active{
+  background:#2563eb;
+  color:white;
+}
+footer{
+  text-align:center;
+  padding:14px;
+  color:#64748b;
+  font-size:13px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>AirWatch</h1>
+  <button onclick="loadDefault()">Refresh</button>
+</header>
+
+<div class="container">
+  <input id="search" placeholder="Search any city worldwide and press Enter">
+
+  <div style="margin:12px 0">
+    <button onclick="openCompare()">Compare Selected Cities</button>
+  </div>
+
+  <div id="cards" class="grid"></div>
+</div>
+
+<footer>
+© 2025 Shiven. All rights reserved.
+</footer>
+
+<!-- MODAL -->
+<div class="modal" id="compareModal">
+  <div class="modal-content">
+    <div class="tabs">
+      <button class="active" onclick="showTab('table')">Table</button>
+      <button onclick="showTab('charts')">Charts</button>
+      <button onclick="showTab('insights')">Insights</button>
+      <button style="float:right" onclick="closeCompare()">Close</button>
+    </div>
+
+    <div id="tableTab"></div>
+    <canvas id="chartTab" style="display:none"></canvas>
+    <div id="insightsTab" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+const API_KEY="bf57504e06985889868020dc567d8730";
+
+let cities=[];
+
+const DEFAULT=["Delhi","Mumbai","Bengaluru","Chennai","Hyderabad","Kolkata","Pune","Ahmedabad","Jaipur"];
+
+// AQI CALC (US EPA PM2.5)
+function pm25ToAQI(pm){
+ if(pm<=12) return Math.round(pm*4.17);
+ if(pm<=35.4) return Math.round((pm-12.1)/(35.4-12.1)*(100-51)+51);
+ if(pm<=55.4) return Math.round((pm-35.5)/(55.4-35.5)*(150-101)+101);
+ if(pm<=150.4) return Math.round((pm-55.5)/(150.4-55.5)*(200-151)+151);
+ if(pm<=250.4) return Math.round((pm-150.5)/(250.4-150.5)*(300-201)+201);
+ return Math.round((pm-250.5)/(500-250.5)*(500-301)+301);
+}
+
+function aqiLabel(aqi){
+ if(aqi<=50) return["Good","#22c55e"];
+ if(aqi<=100) return["Moderate","#eab308"];
+ if(aqi<=150) return["Unhealthy (Sensitive)","#f97316"];
+ if(aqi<=200) return["Unhealthy","#ef4444"];
+ if(aqi<=300) return["Very Unhealthy","#8b5cf6"];
+ return["Hazardous","#7f1d1d"];
+}
+
+async function fetchCity(name){
+ const w=await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${name}&units=metric&appid=${API_KEY}`).then(r=>r.json());
+ const a=await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${w.coord.lat}&lon=${w.coord.lon}&appid=${API_KEY}`).then(r=>r.json());
+ const pm=a.list[0].components.pm2_5;
+ const aqi=pm25ToAQI(pm);
+ return{
+  name:w.name,
+  temp:w.main.temp,
+  hum:w.main.humidity,
+  aqi,
+  selected:false
+ };
+}
+
+async function loadDefault(){
+ cities=[];
+ for(const c of DEFAULT){
+  cities.push(await fetchCity(c));
+ }
+ render();
+}
+
+function render(){
+ const el=document.getElementById("cards");
+ el.innerHTML="";
+ cities.forEach((c,i)=>{
+  const [label,color]=aqiLabel(c.aqi);
+  el.innerHTML+=`
+  <div class="card">
+    <input type="checkbox" ${c.selected?"checked":""} onchange="cities[${i}].selected=this.checked">
+    <h3>${c.name}</h3>
+    <div class="aqi" style="color:${color}">${c.aqi}</div>
+    <span class="badge" style="background:${color}20;color:${color}">${label}</span>
+    <div>🌡 ${c.temp} °C</div>
+    <div>💧 ${c.hum} %</div>
+    <button onclick="refreshCity(${i})">Refresh</button>
+  </div>`;
+ });
+}
+
+async function refreshCity(i){
+ const was=cities[i].selected;
+ cities[i]=await fetchCity(cities[i].name);
+ cities[i].selected=was;
+ render();
+}
+
+document.getElementById("search").addEventListener("keydown",async e=>{
+ if(e.key!=="Enter")return;
+ cities=[await fetchCity(e.target.value)];
+ render();
+});
+
+function openCompare(){
+ const sel=cities.filter(c=>c.selected);
+ if(sel.length<2){alert("Select at least 2 cities");return;}
+ document.getElementById("compareModal").style.display="flex";
+
+ document.getElementById("tableTab").innerHTML=
+ "<table>"+sel.map(c=>`<tr><td>${c.name}</td><td>${c.aqi}</td><td>${c.temp}</td><td>${c.hum}</td></tr>`).join("")+"</table>";
+
+ document.getElementById("insightsTab").innerHTML=
+ `Worst AQI: ${sel.sort((a,b)=>b.aqi-a.aqi)[0].name}`;
+}
+
+function closeCompare(){
+ document.getElementById("compareModal").style.display="none";
+}
+
+function showTab(t){
+ ["table","charts","insights"].forEach(id=>{
+  document.getElementById(id+"Tab").style.display=id===t?"block":"none";
+ });
+ document.querySelectorAll(".tabs button").forEach(b=>b.classList.remove("active"));
+ event.target.classList.add("active");
+}
+
+loadDefault();
+</script>
+</body>
+</html>

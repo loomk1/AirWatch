@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global AQI & Weather Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-6">
+  <h1 class="text-3xl font-bold text-center mb-2">Global Air Quality & Weather Dashboard</h1>
+  <p class="text-center text-gray-600 mb-6">Live AQI (0–500), Temperature & Humidity for Major Cities</p>
+
+  <p class="text-center text-gray-600 mb-4">Data powered by OpenWeatherMap API</p>
+
+  <div class="max-w-6xl mx-auto">
+    <div class="mb-4">
+      <input id="searchInput" type="text" placeholder="Search city..." class="w-full p-3 rounded-xl border shadow focus:outline-none focus:ring" />
+    </div>
+    <div class="overflow-x-auto bg-white rounded-2xl shadow">
+      <table class="min-w-full text-sm text-left">
+        <thead class="bg-gray-200">
+          <tr>
+            <th class="px-4 py-3">City</th>
+            <th class="px-4 py-3">Country</th>
+            <th class="px-4 py-3">Temperature (°C)</th>
+            <th class="px-4 py-3">Humidity (%)</th>
+            <th class="px-4 py-3">AQI</th>
+            <th class="px-4 py-3">Air Quality</th>
+          </tr>
+        </thead>
+        <tbody id="dataTable" class="divide-y"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API_KEY = "bf57504e06985889868020dc567d8730"; // Replace with your API key
+
+    const cities = [
+      // NORTH AMERICA
+      { name: "New York", country: "USA" },
+      { name: "Los Angeles", country: "USA" },
+      { name: "Chicago", country: "USA" },
+      { name: "Houston", country: "USA" },
+      { name: "Phoenix", country: "USA" },
+      { name: "San Francisco", country: "USA" },
+      { name: "Seattle", country: "USA" },
+      { name: "Boston", country: "USA" },
+      { name: "Washington", country: "USA" },
+      { name: "Miami", country: "USA" },
+      { name: "Toronto", country: "Canada" },
+      { name: "Vancouver", country: "Canada" },
+      { name: "Montreal", country: "Canada" },
+      { name: "Calgary", country: "Canada" },
+      { name: "Mexico City", country: "Mexico" },
+      { name: "Guadalajara", country: "Mexico" },
+
+      // SOUTH AMERICA
+      { name: "São Paulo", country: "Brazil" },
+      { name: "Rio de Janeiro", country: "Brazil" },
+      { name: "Brasília", country: "Brazil" },
+      { name: "Buenos Aires", country: "Argentina" },
+      { name: "Córdoba", country: "Argentina" },
+      { name: "Santiago", country: "Chile" },
+      { name: "Lima", country: "Peru" },
+      { name: "Bogotá", country: "Colombia" },
+      { name: "Medellín", country: "Colombia" },
+
+      // EUROPE
+      { name: "London", country: "UK" },
+      { name: "Manchester", country: "UK" },
+      { name: "Birmingham", country: "UK" },
+      { name: "Paris", country: "France" },
+      { name: "Marseille", country: "France" },
+      { name: "Berlin", country: "Germany" },
+      { name: "Munich", country: "Germany" },
+      { name: "Hamburg", country: "Germany" },
+      { name: "Rome", country: "Italy" },
+      { name: "Milan", country: "Italy" },
+      { name: "Madrid", country: "Spain" },
+      { name: "Barcelona", country: "Spain" },
+      { name: "Lisbon", country: "Portugal" },
+      { name: "Amsterdam", country: "Netherlands" },
+      { name: "Brussels", country: "Belgium" },
+      { name: "Vienna", country: "Austria" },
+      { name: "Prague", country: "Czech Republic" },
+      { name: "Warsaw", country: "Poland" },
+      { name: "Budapest", country: "Hungary" },
+      { name: "Stockholm", country: "Sweden" },
+      { name: "Oslo", country: "Norway" },
+      { name: "Copenhagen", country: "Denmark" },
+      { name: "Helsinki", country: "Finland" },
+      { name: "Dublin", country: "Ireland" },
+      { name: "Zurich", country: "Switzerland" },
+      { name: "Geneva", country: "Switzerland" },
+      { name: "Moscow", country: "Russia" },
+      { name: "Saint Petersburg", country: "Russia" },
+
+      // ASIA
+      { name: "Tokyo", country: "Japan" },
+      { name: "Osaka", country: "Japan" },
+      { name: "Nagoya", country: "Japan" },
+      { name: "Seoul", country: "South Korea" },
+      { name: "Busan", country: "South Korea" },
+      { name: "Beijing", country: "China" },
+      { name: "Shanghai", country: "China" },
+      { name: "Shenzhen", country: "China" },
+      { name: "Guangzhou", country: "China" },
+      { name: "Hong Kong", country: "China" },
+
+      // INDIA (EXTENDED LIST – NEAR PRACTICAL LIMIT)
+      { name: "Delhi", country: "India" },
+      { name: "New Delhi", country: "India" },
+      { name: "Mumbai", country: "India" },
+      { name: "Navi Mumbai", country: "India" },
+      { name: "Thane", country: "India" },
+      { name: "Bengaluru", country: "India" },
+      { name: "Chennai", country: "India" },
+      { name: "Kolkata", country: "India" },
+      { name: "Hyderabad", country: "India" },
+      { name: "Pune", country: "India" },
+      { name: "Ahmedabad", country: "India" },
+      { name: "Surat", country: "India" },
+      { name: "Vadodara", country: "India" },
+      { name: "Rajkot", country: "India" },
+      { name: "Jaipur", country: "India" },
+      { name: "Udaipur", country: "India" },
+      { name: "Jodhpur", country: "India" },
+      { name: "Kota", country: "India" },
+      { name: "Lucknow", country: "India" },
+      { name: "Kanpur", country: "India" },
+      { name: "Noida", country: "India" },
+      { name: "Greater Noida", country: "India" },
+      { name: "Ghaziabad", country: "India" },
+      { name: "Faridabad", country: "India" },
+      { name: "Gurugram", country: "India" },
+      { name: "Chandigarh", country: "India" },
+      { name: "Mohali", country: "India" },
+      { name: "Panchkula", country: "India" },
+      { name: "Amritsar", country: "India" },
+      { name: "Ludhiana", country: "India" },
+      { name: "Jalandhar", country: "India" },
+      { name: "Patiala", country: "India" },
+      { name: "Dehradun", country: "India" },
+      { name: "Haridwar", country: "India" },
+      { name: "Rishikesh", country: "India" },
+      { name: "Shimla", country: "India" },
+      { name: "Manali", country: "India" },
+      { name: "Srinagar", country: "India" },
+      { name: "Jammu", country: "India" },
+      { name: "Patna", country: "India" },
+      { name: "Gaya", country: "India" },
+      { name: "Ranchi", country: "India" },
+      { name: "Jamshedpur", country: "India" },
+      { name: "Bhubaneswar", country: "India" },
+      { name: "Cuttack", country: "India" },
+      { name: "Raipur", country: "India" },
+      { name: "Bilaspur", country: "India" },
+      { name: "Nagpur", country: "India" },
+      { name: "Nashik", country: "India" },
+      { name: "Aurangabad", country: "India" },
+      { name: "Kolhapur", country: "India" },
+      { name: "Solapur", country: "India" },
+      { name: "Indore", country: "India" },
+      { name: "Bhopal", country: "India" },
+      { name: "Jabalpur", country: "India" },
+      { name: "Gwalior", country: "India" },
+      { name: "Ujjain", country: "India" },
+      { name: "Vijayawada", country: "India" },
+      { name: "Visakhapatnam", country: "India" },
+      { name: "Guntur", country: "India" },
+      { name: "Tirupati", country: "India" },
+      { name: "Warangal", country: "India" },
+      { name: "Karimnagar", country: "India" },
+      { name: "Coimbatore", country: "India" },
+      { name: "Madurai", country: "India" },
+      { name: "Salem", country: "India" },
+      { name: "Tiruchirappalli", country: "India" },
+      { name: "Erode", country: "India" },
+      { name: "Vellore", country: "India" },
+      { name: "Tirunelveli", country: "India" },
+      { name: "Kochi", country: "India" },
+      { name: "Thiruvananthapuram", country: "India" },
+      { name: "Kozhikode", country: "India" },
+      { name: "Thrissur", country: "India" },
+      { name: "Kannur", country: "India" },
+      { name: "Mangaluru", country: "India" },
+      { name: "Udupi", country: "India" },
+      { name: "Hubballi", country: "India" },
+      { name: "Belagavi", country: "India" },
+      { name: "Shivamogga", country: "India" },
+      { name: "Mysuru", country: "India" },
+      { name: "Davangere", country: "India" },
+      { name: "Kalaburagi", country: "India" },
+      { name: "Guwahati", country: "India" },
+      { name: "Dibrugarh", country: "India" },
+      { name: "Silchar", country: "India" },
+      { name: "Shillong", country: "India" },
+      { name: "Imphal", country: "India" },
+      { name: "Agartala", country: "India" },
+      { name: "Aizawl", country: "India" },
+      { name: "Kohima", country: "India" },
+      { name: "Itanagar", country: "India" },
+      { name: "Gangtok", country: "India" },
+
+      { name: "Bangkok", country: "Thailand" },
+      { name: "Chiang Mai", country: "Thailand" },
+      { name: "Singapore", country: "Singapore" },
+      { name: "Kuala Lumpur", country: "Malaysia" },
+      { name: "Jakarta", country: "Indonesia" },
+      { name: "Manila", country: "Philippines" },
+      { name: "Hanoi", country: "Vietnam" },
+      { name: "Ho Chi Minh City", country: "Vietnam" },
+      { name: "Karachi", country: "Pakistan" },
+      { name: "Lahore", country: "Pakistan" },
+      { name: "Dhaka", country: "Bangladesh" },
+      { name: "Colombo", country: "Sri Lanka" },
+
+      // MIDDLE EAST
+
+      { name: "Dubai", country: "UAE" },
+      { name: "Abu Dhabi", country: "UAE" },
+      { name: "Sharjah", country: "UAE" },
+      { name: "Riyadh", country: "Saudi Arabia" },
+      { name: "Jeddah", country: "Saudi Arabia" },
+      { name: "Doha", country: "Qatar" },
+      { name: "Kuwait City", country: "Kuwait" },
+      { name: "Muscat", country: "Oman" },
+      { name: "Manama", country: "Bahrain" },
+      { name: "Tehran", country: "Iran" },
+
+      // AFRICA
+      { name: "Cairo", country: "Egypt" },
+      { name: "Alexandria", country: "Egypt" },
+      { name: "Nairobi", country: "Kenya" },
+      { name: "Mombasa", country: "Kenya" },
+      { name: "Lagos", country: "Nigeria" },
+      { name: "Abuja", country: "Nigeria" },
+      { name: "Accra", country: "Ghana" },
+      { name: "Johannesburg", country: "South Africa" },
+      { name: "Pretoria", country: "South Africa" },
+      { name: "Cape Town", country: "South Africa" },
+      { name: "Durban", country: "South Africa" },
+      { name: "Casablanca", country: "Morocco" },
+      { name: "Rabat", country: "Morocco" },
+
+      // OCEANIA
+      { name: "Sydney", country: "Australia" },
+      { name: "Melbourne", country: "Australia" },
+      { name: "Brisbane", country: "Australia" },
+      { name: "Perth", country: "Australia" },
+      { name: "Adelaide", country: "Australia" },
+      { name: "Auckland", country: "New Zealand" },
+      { name: "Wellington", country: "New Zealand" }
+    ];
+
+    const aqiText = [
+      "Good",
+      "Satisfactory",
+      "Moderate",
+      "Poor",
+      "Very Poor",
+      "Severe"
+    ];
+
+    function aqiToUS(aqi) {
+      // Map OpenWeather AQI (1–5) to approximate 0–500 scale
+      if (aqi === 1) return 40;
+      if (aqi === 2) return 80;
+      if (aqi === 3) return 150;
+      if (aqi === 4) return 250;
+      if (aqi === 5) return 400;
+      return 0;
+    }
+
+    function aqiLabel(aqiRaw) {
+      return aqiText[aqiRaw - 1] || "Unknown";
+    }
+
+    function aqiColor(aqi) {
+      if (aqi <= 50) return "bg-green-100 text-green-700";
+      if (aqi <= 100) return "bg-yellow-100 text-yellow-700";
+      if (aqi <= 200) return "bg-orange-100 text-orange-700";
+      if (aqi <= 300) return "bg-red-100 text-red-700";
+      return "bg-purple-100 text-purple-700";
+    }
+
+    async function fetchCityData(city) {
+      const weatherRes = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?q=${city.name}&units=metric&appid=${API_KEY}`
+      );
+      const weatherData = await weatherRes.json();
+
+      const { lat, lon } = weatherData.coord;
+
+      const aqiRes = await fetch(
+        `https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${API_KEY}`
+      );
+      const aqiData = await aqiRes.json();
+
+      return {
+        city: city.name,
+        country: city.country,
+        temp: weatherData.main.temp,
+        humidity: weatherData.main.humidity,
+        aqiRaw: aqiData.list[0].main.aqi,
+        aqiUS: aqiToUS(aqiData.list[0].main.aqi)
+      };
+    }
+
+    async function loadData() {
+      const searchInput = document.getElementById("searchInput");
+
+      searchInput.addEventListener("input", () => {
+        const value = searchInput.value.toLowerCase();
+        const rows = document.querySelectorAll("#dataTable tr");
+        rows.forEach(row => {
+          row.style.display = row.innerText.toLowerCase().includes(value) ? "" : "none";
+        });
+      });
+      const table = document.getElementById("dataTable");
+
+      for (const city of cities) {
+        try {
+          const data = await fetchCityData(city);
+
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="px-4 py-3 font-semibold">${data.city}</td>
+            <td class="px-4 py-3 text-gray-600">${data.country}</td>
+            <td class="px-4 py-3">${data.temp} °C</td>
+            <td class="px-4 py-3">${data.humidity} %</td>
+            <td class="px-4 py-3 font-bold">${data.aqiUS}</td>
+            <td class="px-4 py-3">
+              <span class="px-3 py-1 rounded-full text-xs font-semibold ${aqiColor(data.aqiUS)}">
+                ${aqiLabel(data.aqiRaw)}
+              </span>
+            </td>
+          `;
+          table.appendChild(row);
+        } catch (err) {
+          console.error("Error loading data for", city.name);
+        }
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
